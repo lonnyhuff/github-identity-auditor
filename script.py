@@ -1,6 +1,7 @@
 import requests
 import sys
 import json
+from prettytable import PrettyTable
 
 def fetch_linked_users(org, token):
     """
@@ -47,36 +48,43 @@ def fetch_linked_users(org, token):
         "Content-Type": "application/json"
     }
 
-        # Pagination initialization
+    # Initialize table for output
+    table = PrettyTable()
+    table.field_names = ["Login", "SAML Name ID", "SCIM Username"]
+
+    # Initialize pagination
     has_next_page = True
     cursor = None
 
-    # Fetching data with pagination
+    # Loop through pages of results
     while has_next_page:
         variables = {"org": org, "cursor": cursor}
         response = requests.post(url, headers=headers, json={'query': query, 'variables': variables})
         
+        # Check for request failure
         if response.status_code != 200:
             raise Exception(f"Query failed with status code {response.status_code}: {response.text}")
 
         data = response.json()
-
-        # Debugging log
-        print(json.dumps(data, indent=4))
-
-        # Check if the data contains the expected path
-        if data.get('data') and data['data'].get('organization') and data['data']['organization'].get('samlIdentityProvider') and data['data']['organization']['samlIdentityProvider'].get('externalIdentities'):
-            organization_data = data['data']['organization']['samlIdentityProvider']['externalIdentities']
-        else:
-            print("Data structure does not match expected format.")
-            return
-
+        organization_data = data['data']['organization']['samlIdentityProvider']['externalIdentities']
+        
+        # Process and add user data to table
         for edge in organization_data['edges']:
             user = edge['node']
-            print(f"Login: {user['user']['login']}, SAML Name ID: {user['samlIdentity']['nameId']}, SCIM Username: {user['scimIdentity']['username']}")
+            
+            # Handling potential None values
+            user_login = user['user']['login'] if user['user'] else 'None'
+            saml_name_id = user['samlIdentity']['nameId'] if user['samlIdentity'] and user['samlIdentity']['nameId'] else 'None'
+            scim_username = user['scimIdentity']['username'] if user['scimIdentity'] else 'None'
 
+            table.add_row([user_login, saml_name_id, scim_username])
+
+        # Update cursor for next page
         has_next_page = organization_data['pageInfo']['hasNextPage']
         cursor = organization_data['pageInfo']['endCursor']
+
+    # Print the table after all data is fetched
+    print(table)
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
